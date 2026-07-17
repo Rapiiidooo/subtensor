@@ -24,13 +24,13 @@ use pyo3::types::{PyBytes, PyDict, PyInt, PyList, PyString, PyTuple};
 #[derive(Default)]
 pub(crate) struct StrCache {
     strings: Vec<(String, Py<PyString>)>,
-    big_uints: Vec<(u128, PyObject)>,
+    big_uints: Vec<(u128, Py<PyAny>)>,
 }
 
 const STR_CACHE_CAP: usize = 64;
 
 impl StrCache {
-    fn get(&mut self, py: Python<'_>, s: &str) -> PyObject {
+    fn get(&mut self, py: Python<'_>, s: &str) -> Py<PyAny> {
         if let Some((_, cached)) = self.strings.iter().find(|(k, _)| k == s) {
             return cached.clone_ref(py).into_any();
         }
@@ -41,11 +41,11 @@ impl StrCache {
         obj.into_any()
     }
 
-    fn get_big_uint(&mut self, py: Python<'_>, u: u128) -> PyResult<PyObject> {
+    fn get_big_uint(&mut self, py: Python<'_>, u: u128) -> PyResult<Py<PyAny>> {
         if let Some((_, cached)) = self.big_uints.iter().find(|(k, _)| *k == u) {
             return Ok(cached.clone_ref(py));
         }
-        let obj: PyObject = u.into_pyobject(py)?.into_any().unbind();
+        let obj: Py<PyAny> = u.into_pyobject(py)?.into_any().unbind();
         if self.big_uints.len() < STR_CACHE_CAP {
             self.big_uints.push((u, obj.clone_ref(py)));
         }
@@ -54,7 +54,7 @@ impl StrCache {
 }
 
 /// Materialize a decoded value as the exact Python objects cyscale produced.
-pub(crate) fn value_to_py(py: Python<'_>, value: &Value) -> PyResult<PyObject> {
+pub(crate) fn value_to_py(py: Python<'_>, value: &Value) -> PyResult<Py<PyAny>> {
     value_to_py_cached(py, value, &mut StrCache::default())
 }
 
@@ -62,7 +62,7 @@ pub(crate) fn value_to_py_cached(
     py: Python<'_>,
     value: &Value,
     cache: &mut StrCache,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     Ok(match value {
         Value::Null => py.None(),
         Value::Bool(b) => b.into_pyobject(py)?.to_owned().into_any().unbind(),
@@ -128,10 +128,10 @@ fn py_to_value_at(obj: &Bound<'_, PyAny>, depth: usize) -> PyResult<Value> {
         return Ok(Value::Null);
     }
     // bool before int: Python bools are ints.
-    if let Ok(b) = obj.downcast::<pyo3::types::PyBool>() {
+    if let Ok(b) = obj.cast::<pyo3::types::PyBool>() {
         return Ok(Value::Bool(b.is_true()));
     }
-    if obj.downcast::<PyInt>().is_ok() {
+    if obj.cast::<PyInt>().is_ok() {
         if let Ok(i) = obj.extract::<i128>() {
             return Ok(Value::Int(i));
         }
@@ -153,26 +153,26 @@ fn py_to_value_at(obj: &Bound<'_, PyAny>, depth: usize) -> PyResult<Value> {
     if let Ok(b) = obj.extract::<Vec<u8>>() {
         // bytes/bytearray only — a list of ints also extracts to Vec<u8>, so
         // check the concrete type first.
-        if obj.downcast::<PyBytes>().is_ok() || obj.downcast::<pyo3::types::PyByteArray>().is_ok() {
+        if obj.cast::<PyBytes>().is_ok() || obj.cast::<pyo3::types::PyByteArray>().is_ok() {
             return Ok(Value::Bytes(b));
         }
     }
     let deeper = depth.saturating_add(1);
-    if let Ok(list) = obj.downcast::<PyList>() {
+    if let Ok(list) = obj.cast::<PyList>() {
         let mut items = Vec::with_capacity(list.len());
         for item in list.iter() {
             items.push(py_to_value_at(&item, deeper)?);
         }
         return Ok(Value::List(items));
     }
-    if let Ok(tuple) = obj.downcast::<PyTuple>() {
+    if let Ok(tuple) = obj.cast::<PyTuple>() {
         let mut items = Vec::with_capacity(tuple.len());
         for item in tuple.iter() {
             items.push(py_to_value_at(&item, deeper)?);
         }
         return Ok(Value::Tuple(items));
     }
-    if let Ok(dict) = obj.downcast::<PyDict>() {
+    if let Ok(dict) = obj.cast::<PyDict>() {
         let mut entries = Vec::with_capacity(dict.len());
         for (k, v) in dict.iter() {
             entries.push((py_to_value_at(&k, deeper)?, py_to_value_at(&v, deeper)?));
@@ -190,7 +190,7 @@ fn py_to_value_at(obj: &Bound<'_, PyAny>, depth: usize) -> PyResult<Value> {
 pub(crate) fn materialize_pairs(
     py: Python<'_>,
     decoded: &[(Vec<Value>, Value)],
-) -> PyResult<Vec<(PyObject, PyObject)>> {
+) -> PyResult<Vec<(Py<PyAny>, Py<PyAny>)>> {
     let mut cache = StrCache::default();
     let mut out = Vec::with_capacity(decoded.len());
     for (params, value) in decoded {

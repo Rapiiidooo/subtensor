@@ -168,7 +168,7 @@ impl PyRuntime {
         type_string: &str,
         data: &[u8],
         strict: bool,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         let spec = self.inner.type_spec(type_string).map_err(to_py_err)?;
         let value = self
             .inner
@@ -185,10 +185,10 @@ impl PyRuntime {
         py: Python<'_>,
         type_strings: Vec<String>,
         datas: Vec<Vec<u8>>,
-    ) -> PyResult<Vec<PyObject>> {
+    ) -> PyResult<Vec<Py<PyAny>>> {
         let inner = &self.inner;
         let values = py
-            .allow_threads(|| inner.decode_batch(&type_strings, &datas))
+            .detach(|| inner.decode_batch(&type_strings, &datas))
             .map_err(to_py_err)?;
         let mut cache = StrCache::default();
         values
@@ -247,7 +247,7 @@ impl PyRuntime {
 
     /// Decode raw call bytes into the plain call dict
     /// (``call_module``/``call_function``/``call_args``/``call_hash``).
-    fn decode_call(&self, py: Python<'_>, data: &[u8]) -> PyResult<PyObject> {
+    fn decode_call(&self, py: Python<'_>, data: &[u8]) -> PyResult<Py<PyAny>> {
         let mut cursor = Cursor::new(data);
         let value = self
             .inner
@@ -333,7 +333,7 @@ impl PyRuntime {
         storage_function: &str,
         key: &[u8],
         fixed: usize,
-    ) -> PyResult<Vec<PyObject>> {
+    ) -> PyResult<Vec<Py<PyAny>>> {
         let entry = self.entry(pallet, storage_function)?;
         let values = self
             .inner
@@ -357,11 +357,11 @@ impl PyRuntime {
         raw_keys: Vec<Vec<u8>>,
         raw_values: Vec<Vec<u8>>,
         fixed: usize,
-    ) -> PyResult<Vec<(PyObject, PyObject)>> {
+    ) -> PyResult<Vec<(Py<PyAny>, Py<PyAny>)>> {
         let entry = self.entry(pallet, storage_function)?;
         let inner = &self.inner;
         let decoded = py
-            .allow_threads(|| inner.decode_map_page(entry, &raw_keys, &raw_values, fixed))
+            .detach(|| inner.decode_map_page(entry, &raw_keys, &raw_values, fixed))
             .map_err(to_py_err)?;
         materialize_pairs(py, &decoded)
     }
@@ -378,11 +378,11 @@ impl PyRuntime {
         storage_function: &str,
         changes: Vec<(String, Option<String>)>,
         fixed: usize,
-    ) -> PyResult<Vec<(PyObject, PyObject)>> {
+    ) -> PyResult<Vec<(Py<PyAny>, Py<PyAny>)>> {
         let entry = self.entry(pallet, storage_function)?;
         let inner = &self.inner;
         let decoded = py
-            .allow_threads(|| inner.decode_map_changes(entry, &changes, fixed))
+            .detach(|| inner.decode_map_changes(entry, &changes, fixed))
             .map_err(to_py_err)?;
         materialize_pairs(py, &decoded)
     }
@@ -390,7 +390,7 @@ impl PyRuntime {
     // -- constants / errors -----------------------------------------------------
 
     /// Decoded value of a pallet constant, or None when it does not exist.
-    fn constant(&self, py: Python<'_>, module: &str, name: &str) -> PyResult<PyObject> {
+    fn constant(&self, py: Python<'_>, module: &str, name: &str) -> PyResult<Py<PyAny>> {
         let Some(constant) = self.inner.constant(module, name) else {
             return Ok(py.None());
         };
@@ -539,7 +539,7 @@ impl PyRuntime {
 
     /// Decode one raw extrinsic into its plain value dict.
     #[pyo3(signature = (data, strict=true))]
-    fn decode_extrinsic(&self, py: Python<'_>, data: &[u8], strict: bool) -> PyResult<PyObject> {
+    fn decode_extrinsic(&self, py: Python<'_>, data: &[u8], strict: bool) -> PyResult<Py<PyAny>> {
         let value = self
             .inner
             .decode_extrinsic(data, strict)
@@ -551,7 +551,7 @@ impl PyRuntime {
 
     /// ``{api: {method: {"inputs": [(name, type_string)], "output":
     /// type_string, "docs": [...]}}}`` from V15 metadata (empty for V14).
-    fn runtime_api_map(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn runtime_api_map(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let apis = PyDict::new(py);
         for api in &self.inner.apis {
             let methods = PyDict::new(py);
@@ -576,7 +576,7 @@ impl PyRuntime {
     /// The codegen IR: ``{spec_version, pallets: [...], runtime_apis: [...]}``
     /// with call args/docs, indexed errors, storage entries (name + value
     /// type identity), and constant names.
-    fn metadata_ir(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn metadata_ir(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let join_docs = |docs: &[String]| -> String {
             docs.iter()
                 .map(|d| d.trim())

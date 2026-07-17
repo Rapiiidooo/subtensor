@@ -97,7 +97,7 @@ fn get_encrypted_commitment(
 #[pyfunction(name = "get_latest_round")]
 fn get_latest_round_py(py: Python) -> PyResult<u64> {
     let response = py
-        .allow_threads(|| timelock::get_round_info(None))
+        .detach(|| timelock::get_round_info(None))
         .map_err(to_py_err)?;
     Ok(response.round)
 }
@@ -154,7 +154,7 @@ fn encrypt_at_round(py: Python, data: &[u8], reveal_round: u64) -> PyResult<(Py<
 #[pyo3(signature = (encrypted_data, no_errors=true))]
 fn decrypt(py: Python, encrypted_data: &[u8], no_errors: bool) -> PyResult<Option<Py<PyBytes>>> {
     let decoded = py
-        .allow_threads(|| timelock::decrypt(encrypted_data, no_errors))
+        .detach(|| timelock::decrypt(encrypted_data, no_errors))
         .map_err(to_py_err)?;
     Ok(decoded.map(|data| PyBytes::new(py, &data).into()))
 }
@@ -190,7 +190,7 @@ fn decrypt_with_signature(
 ///     str: Hex-encoded BLS signature for the round.
 #[pyfunction]
 fn get_signature_for_round(py: Python, reveal_round: u64) -> PyResult<String> {
-    py.allow_threads(|| timelock::get_reveal_round_signature(Some(reveal_round), false))
+    py.detach(|| timelock::get_reveal_round_signature(Some(reveal_round), false))
         .map_err(to_py_err)?
         .ok_or_else(|| pyo3::exceptions::PyValueError::new_err("Signature not available"))
 }

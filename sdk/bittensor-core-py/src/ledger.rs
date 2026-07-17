@@ -74,7 +74,7 @@ impl PyLedgerDevice {
         index: u32,
     ) -> PyResult<Py<PyBytes>> {
         let signature = py
-            .allow_threads(|| self.inner.sign(account, index, &payload, &proof))
+            .detach(|| self.inner.sign(account, index, &payload, &proof))
             .map_err(to_py_err)?;
         Ok(PyBytes::new(py, &signature).into())
     }

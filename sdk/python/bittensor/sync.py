@@ -13,6 +13,7 @@ offline — e.g. in tests, or with an injected fake ``substrate``.
 from __future__ import annotations
 
 import asyncio
+import inspect
 import threading
 from typing import Any, Callable, Iterator, Optional
 
@@ -69,7 +70,7 @@ class _SyncNamespace:
 
     def __getattr__(self, name: str):
         attr = getattr(self._target, name)
-        if not asyncio.iscoroutinefunction(attr):
+        if not inspect.iscoroutinefunction(attr):
             return attr
 
         def wrapper(*args, **kwargs):
